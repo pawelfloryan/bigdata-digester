@@ -24,8 +24,9 @@ func main() {
 	}))
 
 	db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
+	db.Conn.Exec(ctx, "USE youtube")
 
-	db.createTable(ctx)
+	db.createTable()
 
 	/*
 		for rows.Next() {
@@ -48,7 +49,10 @@ func main() {
 	*/
 }
 
-func (db *DB) createTable(ctx context.Context) error {
+func (db *DB) createTable() error {
+	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
+		"database": db.selected,
+	}))
 	err := db.Conn.Exec(ctx, `
 	CREATE TABLE youtubeStats (
 		id String,
