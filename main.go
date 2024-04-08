@@ -53,32 +53,7 @@ func (db *DB) createTable() error {
 	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
 		"database": db.selected,
 	}))
-	err := db.Conn.Exec(ctx, `
-	CREATE TABLE youtubeStats (
-		id String,
-		fetch_date DateTime,
-		upload_date_str String,
-		upload_date Date,
-		title String,
-		uploader_id String,
-		uploader String,
-		uploader_sub_count Int64,
-		is_age_limit Bool,
-		view_count Int64,
-		like_count Int64,
-		dislike_count Int64,
-		is_crawlable Bool,
-		has_subtitles Bool,
-		is_ads_enabled Bool,
-		is_comments_enabled Bool,
-		description String,
-		rich_metadata Array(Tuple(call String, content String, subtitle String, title String, url String)),
-		super_titles Array(Tuple(text String, url String)),
-		uploader_badges String,
-		video_badges String
-	) ENGINE = AggregatingMergeTree()
-	ORDER BY (uploader, upload_date)
-`)
+	err := db.Conn.Exec(ctx, "CREATE TABLE IF NOT EXISTS youtubeStats AS s3('https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst','JSONLines');")
 	if err != nil {
 		return err
 	}
