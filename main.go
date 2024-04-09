@@ -24,9 +24,8 @@ func main() {
 	}))
 
 	db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
-	db.Conn.Exec(ctx, "USE youtube")
 
-	db.createTable()
+	db.createTables()
 
 	/*
 		for rows.Next() {
@@ -49,11 +48,33 @@ func main() {
 	*/
 }
 
-func (db *DB) createTable() error {
+func (db *DB) createTables() error {
 	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
 		"database": db.selected,
 	}))
-	err := db.Conn.Exec(ctx, "CREATE TABLE IF NOT EXISTS youtubeStats AS s3('https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst','JSONLines');")
+
+	err := db.Conn.Exec(ctx, "CREATE TABLE IF NOT EXISTS youtube.youtube_stats AS s3('https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst','JSONLines');")
+
+	err = db.Conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
+		title String,
+		like_count Int64,
+		uploader_sub_count Int64,
+		dislike_count Int64,
+		view_count Int64,
+	) ENGINE = Null`)
+	if err != nil {
+		return err
+	}
+
+	err = db.Conn.Exec(ctx, `CREATE MATERIALIZED VIEW IF NOT EXISTS youtube.youtube_stats_trimmed_mv
+	TO youtube.youtube_stats AS
+	SELECT
+		title,
+		like_count,
+		uploader_sub_count,
+		dislike_count,
+		view_count
+	FROM youtube.youtube_stats`)
 	if err != nil {
 		return err
 	}
