@@ -27,29 +27,10 @@ func main() {
 
 	db.createTables()
 
+	//Uncomment this method call if you want few GB of youtube data inserted
 	//db.insertData()
 
 	db.selectData()
-
-	/*
-		for rows.Next() {
-			var (
-				id, fetch_date, upload_date, title, uploader_id, uploader, description string
-			)
-			if err := rows.Scan(
-				&id,
-				&fetch_date,
-				&upload_date,
-				&title,
-				&uploader_id,
-				&uploader,
-				&description,
-			); err != nil {
-				log.Fatal(err)
-			}
-			log.Println(id, fetch_date, upload_date, title, uploader_id, uploader, description)
-		}
-	*/
 }
 
 func (db *DB) insertData() error {
@@ -57,6 +38,7 @@ func (db *DB) insertData() error {
 		"database": db.selected,
 	}))
 
+	//One random row insert
 	/*
 		`INSERT INTO youtube.youtube_stats
 			VALUES (
@@ -129,6 +111,26 @@ func (db *DB) selectData() (driver.Rows, error) {
 		return nil, err
 	}
 
+	/*
+		for rows.Next() {
+			var (
+				id, fetch_date, upload_date, title, uploader_id, uploader, description string
+			)
+			if err := rows.Scan(
+				&id,
+				&fetch_date,
+				&upload_date,
+				&title,
+				&uploader_id,
+				&uploader,
+				&description,
+			); err != nil {
+				log.Fatal(err)
+			}
+			log.Println(id, fetch_date, upload_date, title, uploader_id, uploader, description)
+		}
+	*/
+
 	return data, nil
 }
 
@@ -137,6 +139,8 @@ func (db *DB) createTables() error {
 		"database": db.selected,
 	}))
 
+	//The table which receives insert queries from the client
+	//Materialized view takes data from this table
 	err := db.Conn.Exec(ctx, `
 	CREATE TABLE youtube.youtube_stats (
 		id String,
@@ -168,6 +172,8 @@ func (db *DB) createTables() error {
 		return err
 	}
 
+	//The table which receives data from the Materialized View
+	//Materialized view puts data in this table
 	err = db.Conn.Exec(ctx,
 		`CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
 		title String,
@@ -183,6 +189,9 @@ func (db *DB) createTables() error {
 		return err
 	}
 
+	//The Materialized View takes data from the youtube_stats table and puts it inside the youtube_stats_trimmed table
+	//It can also be formatted in some way if you want to
+	//These actions all happen while executing inserts of data on the youtube_stats table
 	err = db.Conn.Exec(ctx,
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS youtube.youtube_stats_trimmed_mv
 	TO youtube.youtube_stats_trimmed AS
