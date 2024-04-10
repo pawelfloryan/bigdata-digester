@@ -27,7 +27,7 @@ func main() {
 
 	db.createTables()
 
-	db.insertData()
+	//db.insertData()
 
 	db.selectData()
 
@@ -57,8 +57,35 @@ func (db *DB) insertData() error {
 		"database": db.selected,
 	}))
 
+	/*
+		`INSERT INTO youtube.youtube_stats
+			VALUES (
+			'id',
+			'2019-01-01 00:00:00',
+			'upload_date_str',
+			'2019-01-01',
+			'title',
+			'uploader_id',
+			'uploader',
+			12,
+			false,
+			12,
+			13,
+			145,
+			true,
+			true,
+			true,
+			true,
+			'description',
+			[('call', 'content', 'subtitle', 'title', 'url')],
+			[('text', 'url')],
+			'uploader_badges',
+			'video_badges'
+		)`
+	*/
+
 	err := db.Conn.Exec(ctx, `
-	INSERT INTO youtube
+	INSERT INTO youtube.youtube_stats
 	SETTINGS input_format_null_as_default = 1
 	SELECT
     	id,
@@ -110,28 +137,69 @@ func (db *DB) createTables() error {
 		"database": db.selected,
 	}))
 
-	err := db.Conn.Exec(ctx, "CREATE TABLE IF NOT EXISTS youtube.youtube_stats AS s3('https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst','JSONLines');")
+	err := db.Conn.Exec(ctx, `
+	CREATE TABLE youtube.youtube_stats (
+		id String,
+		fetch_date DateTime,
+		upload_date_str String,
+		upload_date Date,
+		title String,
+		uploader_id String,
+		uploader String,
+		uploader_sub_count Int64,
+		is_age_limit Bool,
+		view_count Int64,
+		like_count Int64,
+		dislike_count Int64,
+		is_crawlable Bool,
+		has_subtitles Bool,
+		is_ads_enabled Bool,
+		is_comments_enabled Bool,
+		description String,
+		rich_metadata Array(Tuple(call String, content String, subtitle String, title String, url String)),
+		super_titles Array(Tuple(text String, url String)),
+		uploader_badges String,
+		video_badges String
+	)
+		ENGINE = MergeTree()
+		ORDER BY (uploader, upload_date)
+	`)
+	if err != nil {
+		return err
+	}
 
-	err = db.Conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
+	err = db.Conn.Exec(ctx,
+		`CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
 		title String,
 		like_count Int64,
 		uploader_sub_count Int64,
 		dislike_count Int64,
 		view_count Int64,
-	) ENGINE = MergeTree()`)
+	) 
+		ENGINE = AggregatingMergeTree()
+		ORDER BY (title)
+	`)
 	if err != nil {
 		return err
 	}
 
-	err = db.Conn.Exec(ctx, `CREATE MATERIALIZED VIEW IF NOT EXISTS youtube.youtube_stats_trimmed_mv
-	TO youtube.youtube_stats AS
+	err = db.Conn.Exec(ctx,
+		`CREATE MATERIALIZED VIEW IF NOT EXISTS youtube.youtube_stats_trimmed_mv
+	TO youtube.youtube_stats_trimmed AS
 	SELECT
 		title,
 		like_count,
 		uploader_sub_count,
 		dislike_count,
 		view_count
-	FROM youtube.youtube_stats`)
+	FROM youtube.youtube_stats
+	GROUP BY
+		title,
+		like_count,
+		uploader_sub_count,
+		dislike_count,
+		view_count
+	`)
 	if err != nil {
 		return err
 	}
