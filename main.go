@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -30,7 +31,13 @@ func main() {
 	//Uncomment this method call if you want few GB of youtube data inserted
 	//db.insertData()
 
-	db.selectData()
+	good, bad, errorOr := db.selectData()
+	if errorOr != nil {
+		panic((errorOr))
+	}
+
+	printOutLists(good)
+	printOutLists(bad)
 }
 
 func (db *DB) insertData() error {
@@ -100,38 +107,44 @@ func (db *DB) insertData() error {
 	return err
 }
 
-func (db *DB) selectData() (driver.Rows, error) {
+func printOutLists(data driver.Rows) {
+	for data.Next() {
+		var (
+			uploader                                                  string
+			like_count, uploader_sub_count, dislike_count, view_count int64
+		)
+		if err := data.Scan(
+			&uploader,
+			&like_count,
+			&uploader_sub_count,
+			&dislike_count,
+			&view_count,
+		); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(uploader, like_count, uploader_sub_count, dislike_count, view_count)
+	}
+	fmt.Println("")
+}
+
+func (db *DB) selectData() (driver.Rows, driver.Rows, error) {
 	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
 		"database": db.selected,
 	}))
 
-	data, err := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed`)
+	good, errGood := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY uploader_sub_count DESC, dislike_count DESC LIMIT 10`)
 
-	if err != nil {
-		return nil, err
+	if errGood != nil {
+		return nil, nil, errGood
 	}
 
-	/*
-		for rows.Next() {
-			var (
-				id, fetch_date, upload_date, title, uploader_id, uploader, description string
-			)
-			if err := rows.Scan(
-				&id,
-				&fetch_date,
-				&upload_date,
-				&title,
-				&uploader_id,
-				&uploader,
-				&description,
-			); err != nil {
-				log.Fatal(err)
-			}
-			log.Println(id, fetch_date, upload_date, title, uploader_id, uploader, description)
-		}
-	*/
+	bad, errBad := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY uploader_sub_count ASC, dislike_count DESC LIMIT 10`)
 
-	return data, nil
+	if errBad != nil {
+		return nil, nil, errBad
+	}
+
+	return good, bad, nil
 }
 
 func (db *DB) createTables() error {
@@ -176,14 +189,14 @@ func (db *DB) createTables() error {
 	//Materialized view puts data in this table
 	err = db.Conn.Exec(ctx,
 		`CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
-		title String,
+		uploader String,
 		like_count Int64,
 		uploader_sub_count Int64,
 		dislike_count Int64,
 		view_count Int64,
 	) 
 		ENGINE = AggregatingMergeTree()
-		ORDER BY (title)
+		ORDER BY (uploader)
 	`)
 	if err != nil {
 		return err
@@ -196,14 +209,14 @@ func (db *DB) createTables() error {
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS youtube.youtube_stats_trimmed_mv
 	TO youtube.youtube_stats_trimmed AS
 	SELECT
-		title,
+		uploader,
 		like_count,
 		uploader_sub_count,
 		dislike_count,
 		view_count
 	FROM youtube.youtube_stats
 	GROUP BY
-		title,
+		uploader,
 		like_count,
 		uploader_sub_count,
 		dislike_count,
