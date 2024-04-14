@@ -37,6 +37,7 @@ func main() {
 	}
 
 	printOutLists(good)
+	fmt.Println("")
 	printOutLists(bad)
 }
 
@@ -108,6 +109,8 @@ func (db *DB) insertData() error {
 }
 
 func printOutLists(data driver.Rows) {
+	fmt.Println("Uploader likes subscriptions dislikes views")
+	fmt.Println("-------------------------------------------")
 	for data.Next() {
 		var (
 			uploader                                                  string
@@ -124,7 +127,6 @@ func printOutLists(data driver.Rows) {
 		}
 		fmt.Println(uploader, like_count, uploader_sub_count, dislike_count, view_count)
 	}
-	fmt.Println("")
 }
 
 func (db *DB) selectData() (driver.Rows, driver.Rows, error) {
