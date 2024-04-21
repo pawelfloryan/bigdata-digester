@@ -39,6 +39,7 @@ func main() {
 	printOutLists(good)
 	fmt.Println("")
 	printOutLists(bad)
+
 }
 
 func (db *DB) insertData() error {
@@ -134,13 +135,13 @@ func (db *DB) selectData() (driver.Rows, driver.Rows, error) {
 		"database": db.selected,
 	}))
 
-	good, errGood := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY uploader_sub_count DESC, dislike_count DESC LIMIT 10`)
+	good, errGood := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY total_uploader_sub_count DESC, total_dislike_count DESC LIMIT 10`)
 
 	if errGood != nil {
 		return nil, nil, errGood
 	}
 
-	bad, errBad := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY uploader_sub_count ASC, dislike_count DESC LIMIT 10`)
+	bad, errBad := db.Conn.Query(ctx, `SELECT * FROM youtube.youtube_stats_trimmed ORDER BY total_uploader_sub_count ASC, total_dislike_count DESC LIMIT 10`)
 
 	if errBad != nil {
 		return nil, nil, errBad
@@ -192,10 +193,10 @@ func (db *DB) createTables() error {
 	err = db.Conn.Exec(ctx,
 		`CREATE TABLE IF NOT EXISTS youtube.youtube_stats_trimmed (
 		uploader String,
-		like_count Int64,
-		uploader_sub_count Int64,
-		dislike_count Int64,
-		view_count Int64,
+		total_like_count AggregateFunction(sum, Int64),
+		total_uploader_sub_count AggregateFunction(sum, Int64),
+		total_dislike_count AggregateFunction(sum, Int64),
+		total_view_count AggregateFunction(sum, Int64),
 	) 
 		ENGINE = AggregatingMergeTree()
 		ORDER BY (uploader)
@@ -212,17 +213,13 @@ func (db *DB) createTables() error {
 	TO youtube.youtube_stats_trimmed AS
 	SELECT
 		uploader,
-		like_count,
-		uploader_sub_count,
-		dislike_count,
-		view_count
-	FROM youtube.youtube_stats
+		sumState(y.like_count) as total_like_count,
+		sumState(y.uploader_sub_count) as total_uploader_sub_count,
+		sumState(y.dislike_count) as total_dislike_count,
+		sumState(y.view_count) as total_view_count
+	FROM youtube.youtube_stats y
 	GROUP BY
-		uploader,
-		like_count,
-		uploader_sub_count,
-		dislike_count,
-		view_count
+		uploader
 	`)
 	if err != nil {
 		return err
