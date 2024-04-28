@@ -1,4 +1,4 @@
-package writer
+package main
 
 import (
 	"bufio"
@@ -21,19 +21,28 @@ type (
 	Data any
 
 	Writer struct {
-		db           Database
-		wg           sync.WaitGroup
+		database     Database
+		wg           *sync.WaitGroup
 		writeChannel chan Data
-		database     string
+		databaseName string
 	}
 )
 
+func NewWriter(database Database, databaseName string) *Writer {
+	return &Writer{
+		database:     database,
+		wg:           new(sync.WaitGroup),
+		writeChannel: make(chan Data),
+		databaseName: databaseName,
+	}
+}
+
 func (w *Writer) WriteBatch() {
-	conn := w.db.GetConn()
+	conn := w.database.GetConn()
 	defer conn.Close()
 
-	//ctx := w.db.QueryParameters(clickhouse.Parameters{
-	//	"database": w.database,
+	//ctx := w.database.QueryParameters(clickhouse.Parameters{
+	//	"database": w.databaseName,
 	//})
 
 	file, err := os.Open("./youtube.json")

@@ -10,38 +10,60 @@ import (
 )
 
 type DB struct {
-	Conn     driver.Conn
-	selected string
+	Conn            driver.Conn
+	selected        string
+	rolling         bool
+	rebuild         bool
+	ctx             context.Context
+	cancel          context.CancelFunc
+	ImportStartedAt int64
+}
+
+// GetConn implements Database.
+func (db *DB) GetConn() driver.Conn {
+	return db.Conn
+}
+
+// GetContext implements Database.
+func (db *DB) GetContext() context.Context {
+	return db.ctx
+}
+
+// QueryParameters implements Database.
+func (db *DB) QueryParameters(params clickhouse.Parameters) context.Context {
+	return clickhouse.Context(db.ctx, clickhouse.WithParameters(params))
 }
 
 func main() {
 	db, err := connect()
+	print(err)
 	if err != nil {
-		print("Couldn't to the database")
-	} else {
+		println("Couldn't connect to the database")
+	}
 
-		ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
-			"database": db.selected,
-		}))
+	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
+		"database": db.selected,
+	}))
 
-		db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
+	db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
 
-		db.createTables()
+	db.createTables()
 
-		//Uncomment this method call if you want few GB of youtube data inserted
-		//db.insertData()
+	//Uncomment this method call if you want few GB of youtube data inserted
+	//db.insertData()
 
+	/*
 		good, bad, errorOr := db.selectData()
 		if errorOr != nil {
-			panic((errorOr))
+			println("Couldn't select from the database")
 		}
 
 		printOutLists(good)
 		fmt.Println("")
 		printOutLists(bad)
-	}
-
+	*/
 	var writer Writer
+	NewWriter(db, "youtube")
 	writer.WriteBatch()
 }
 
