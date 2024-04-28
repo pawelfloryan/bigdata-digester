@@ -17,29 +17,32 @@ type DB struct {
 func main() {
 	db, err := connect()
 	if err != nil {
-		panic((err))
+		print("Couldn't to the database")
+	} else {
+
+		ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
+			"database": db.selected,
+		}))
+
+		db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
+
+		db.createTables()
+
+		//Uncomment this method call if you want few GB of youtube data inserted
+		//db.insertData()
+
+		good, bad, errorOr := db.selectData()
+		if errorOr != nil {
+			panic((errorOr))
+		}
+
+		printOutLists(good)
+		fmt.Println("")
+		printOutLists(bad)
 	}
 
-	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
-		"database": db.selected,
-	}))
-
-	db.Conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS youtube")
-
-	db.createTables()
-
-	//Uncomment this method call if you want few GB of youtube data inserted
-	//db.insertData()
-
-	good, bad, errorOr := db.selectData()
-	if errorOr != nil {
-		panic((errorOr))
-	}
-
-	printOutLists(good)
-	fmt.Println("")
-	printOutLists(bad)
-
+	var writer Writer
+	writer.WriteBatch()
 }
 
 func (db *DB) insertData() error {
