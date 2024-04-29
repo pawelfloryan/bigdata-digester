@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"learning-clickhouse/writer"
 	"log"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -62,9 +63,9 @@ func main() {
 		fmt.Println("")
 		printOutLists(bad)
 	*/
-	var writer Writer
-	NewWriter(db, "youtube")
-	writer.WriteBatch()
+	var write writer.Writer
+	writer.NewWriter(db, "youtube")
+	write.WriteBatch()
 }
 
 func (db *DB) insertData() error {
