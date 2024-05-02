@@ -1,10 +1,8 @@
 package writer
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"os"
+	"log"
 	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -21,45 +19,57 @@ type (
 	Data any
 
 	Writer struct {
-		database     Database
-		wg           *sync.WaitGroup
-		writeChannel chan Data
-		databaseName string
+		Database     Database
+		Wg           *sync.WaitGroup
+		WriteChannel chan Data
+		DatabaseName string
 	}
 )
 
 func NewWriter(database Database, databaseName string) *Writer {
 	return &Writer{
-		database:     database,
-		wg:           new(sync.WaitGroup),
-		writeChannel: make(chan Data),
-		databaseName: databaseName,
+		Database:     database,
+		Wg:           new(sync.WaitGroup),
+		WriteChannel: make(chan Data),
+		DatabaseName: databaseName,
 	}
 }
 
-func (w *Writer) WriteBatch() {
-	conn := w.database.GetConn()
-	defer conn.Close()
+func (w *Writer) WriteBatch(conn driver.Conn) {
+	w.Wg.Add(1)
+	go func() {
+		//conn := w.database.GetConn()
 
-	//ctx := w.database.QueryParameters(clickhouse.Parameters{
-	//	"database": w.databaseName,
-	//})
+		//ctx := w.database.QueryParameters(clickhouse.Parameters{
+		//	"database": w.databaseName,
+		//})
 
-	file, err := os.Open("./youtube.json")
-	if err != nil {
-		print(err)
-		return
-	}
-	defer file.Close()
+		ctx := context.Background()
 
-	var scanner *bufio.Scanner
-	scanner = bufio.NewScanner(file)
-	print(scanner)
+		var data []Data
+		print(<-w.WriteChannel)
 
-	for scanner.Scan() {
-		fmt.Print(scanner.Bytes())
-	}
+		for change := range w.WriteChannel {
+			data = append(data, change)
+			batch, err := conn.PrepareBatch(ctx, "INSERT INTO youtube.youtube_stats")
+			if err != nil {
+				log.Panicln(err)
+			}
 
-	//batch, err := conn.PrepareBatch(ctx, "INSERT INTO {database:Identifier}.youtube_stats")
+			for _, item := range data {
+				err := batch.AppendStruct(item)
+				if err != nil {
+					log.Panicln(err)
+				}
+			}
 
+			err = batch.Send()
+			if err != nil {
+				log.Panicln(err)
+			}
+		}
+
+		w.Wg.Done()
+	}()
+	close(w.WriteChannel)
 }

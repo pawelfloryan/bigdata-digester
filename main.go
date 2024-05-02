@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"learning-clickhouse/writer"
 	"log"
+	"os"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	jsoniter "github.com/json-iterator/go"
 )
 
 type DB struct {
@@ -18,6 +21,30 @@ type DB struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	ImportStartedAt int64
+}
+
+type YT struct {
+	id                  string
+	fetch_date          string
+	upload_date_str     string
+	upload_date         string
+	title               string
+	uploader_id         string
+	uploader            string
+	uploader_sub_count  int64
+	is_age_limit        bool
+	view_count          int64
+	like_count          int64
+	dislike_count       int64
+	is_crawlable        bool
+	has_subtitles       bool
+	is_ads_enabled      bool
+	is_comments_enabled bool
+	description         string
+	rich_metadata       interface{}
+	super_titles        interface{}
+	uploader_badges     string
+	video_badges        string
 }
 
 // GetConn implements Database.
@@ -37,7 +64,6 @@ func (db *DB) QueryParameters(params clickhouse.Parameters) context.Context {
 
 func main() {
 	db, err := connect()
-	print(err)
 	if err != nil {
 		println("Couldn't connect to the database")
 	}
@@ -63,9 +89,33 @@ func main() {
 		fmt.Println("")
 		printOutLists(bad)
 	*/
-	var write writer.Writer
-	writer.NewWriter(db, "youtube")
-	write.WriteBatch()
+
+	jsonWriter := writer.NewWriter(db, "youtube")
+	scanFile(jsonWriter.WriteChannel)
+	jsonWriter.WriteBatch(db.Conn)
+}
+
+func scanFile(entryChannel chan writer.Data) {
+	file, err := os.Open("./youtube.json")
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	var scanner *bufio.Scanner
+	scanner = bufio.NewScanner(file)
+	var data YT
+
+	for scanner.Scan() {
+		if len(scanner.Bytes()) < 1 {
+			continue
+		}
+		if err := jsoniter.ConfigCompatibleWithStandardLibrary.Unmarshal(scanner.Bytes(), &data); err != nil {
+			continue
+		}
+		println(&data)
+		entryChannel <- data
+	}
+	file.Close()
 }
 
 func (db *DB) insertData() error {
