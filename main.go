@@ -2,50 +2,46 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"learning-clickhouse/writer"
 	"log"
 	"os"
+	"strconv"
+	"sync"
+
+	zerolog "learning-clickhouse/logger"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	jsoniter "github.com/json-iterator/go"
 )
 
-type DB struct {
-	Conn            driver.Conn
-	selected        string
-	rolling         bool
-	rebuild         bool
-	ctx             context.Context
-	cancel          context.CancelFunc
-	ImportStartedAt int64
-}
+type (
+	DB struct {
+		Conn            driver.Conn
+		selected        string
+		rolling         bool
+		rebuild         bool
+		ctx             context.Context
+		cancel          context.CancelFunc
+		ImportStartedAt int64
+	}
 
-type YT struct {
-	id                  string
-	fetch_date          string
-	upload_date_str     string
-	upload_date         string
-	title               string
-	uploader_id         string
-	uploader            string
-	uploader_sub_count  int64
-	is_age_limit        bool
-	view_count          int64
-	like_count          int64
-	dislike_count       int64
-	is_crawlable        bool
-	has_subtitles       bool
-	is_ads_enabled      bool
-	is_comments_enabled bool
-	description         string
-	rich_metadata       interface{}
-	super_titles        interface{}
-	uploader_badges     string
-	video_badges        string
-}
+	RichMetadata struct {
+		call     string
+		content  string
+		subtitle string
+		title    string
+		url      string
+	}
+
+	SuperTitles struct {
+		text string
+		url  string
+	}
+)
 
 // GetConn implements Database.
 func (db *DB) GetConn() driver.Conn {
@@ -63,6 +59,7 @@ func (db *DB) QueryParameters(params clickhouse.Parameters) context.Context {
 }
 
 func main() {
+	var wg sync.WaitGroup
 	db, err := connect()
 	if err != nil {
 		println("Couldn't connect to the database")
@@ -76,113 +73,122 @@ func main() {
 
 	db.createTables()
 
-	//Uncomment this method call if you want few GB of youtube data inserted
-	//db.insertData()
-
-	/*
-		good, bad, errorOr := db.selectData()
-		if errorOr != nil {
-			println("Couldn't select from the database")
-		}
-
-		printOutLists(good)
-		fmt.Println("")
-		printOutLists(bad)
-	*/
-
 	jsonWriter := writer.NewWriter(db, "youtube")
-	scanFile(jsonWriter.WriteChannel)
-	jsonWriter.WriteBatch(db.Conn)
+	entryChannel := make(chan writer.YT)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		jsonWriter.WriteBatch(db.Conn)
+	}()
+	go func() {
+		defer wg.Done()
+		scanFile(entryChannel)
+	}()
+	go func() {
+		defer wg.Done()
+		parseConn(entryChannel, jsonWriter.WriteChannel)
+	}()
+	wg.Wait()
 }
 
-func scanFile(entryChannel chan writer.Data) {
+func scanFile(entryChannel chan<- writer.YT) {
+	logger := zerolog.GetLogger()
 	file, err := os.Open("./youtube.json")
 	if err != nil {
 		log.Panicln(err)
 	}
+	defer file.Close()
 
-	var scanner *bufio.Scanner
-	scanner = bufio.NewScanner(file)
-	var data YT
+	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
-		if len(scanner.Bytes()) < 1 {
+		var data writer.YT
+		if scanner.Err() != nil {
+			log.Fatal("failed to scan")
+			return
+		}
+
+		println(scanner.Text())
+
+		dst := &bytes.Buffer{}
+		if err := json.Compact(dst, scanner.Bytes()); err != nil {
+			panic(err)
+		}
+
+		if err := json.Unmarshal(dst.Bytes(), &data); err != nil {
+			logger.Err(err).Bytes("record", scanner.Bytes()).Msg("failed to unmarshal line from JSON")
 			continue
 		}
-		if err := jsoniter.ConfigCompatibleWithStandardLibrary.Unmarshal(scanner.Bytes(), &data); err != nil {
-			continue
-		}
-		println(&data)
 		entryChannel <- data
 	}
-	file.Close()
 }
 
-func (db *DB) insertData() error {
-	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
-		"database": db.selected,
-	}))
+func parseConn(entryChannel chan writer.YT, writeChannel chan<- writer.ConnEntry) {
+	for e := range entryChannel {
+		uploaderSubCount, err := strconv.ParseInt(e.Uploader_sub_count, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		viewCount, err := strconv.ParseInt(e.Uploader_sub_count, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		likeCount, err := strconv.ParseInt(e.Uploader_sub_count, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		dislikeCount, err := strconv.ParseInt(e.Uploader_sub_count, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		richMetadata := make([]interface{}, 5)
+		for i := 0; i < 5; i++ {
+			if i < len(e.Rich_metadata) {
+				richMetadata[i] = e.Rich_metadata[i]
+			} else {
+				richMetadata[i] = ""
+			}
+		}
+		superTitles := make([]interface{}, 2)
+		for i := 0; i < 2; i++ {
+			if i < len(e.Super_titles) {
+				superTitles[i] = e.Super_titles[i]
+			} else {
+				superTitles[i] = ""
+			}
+		}
 
-	//One random row insert
-	/*
-		`INSERT INTO youtube.youtube_stats
-			VALUES (
-			'id',
-			'2019-01-01 00:00:00',
-			'upload_date_str',
-			'2019-01-01',
-			'title',
-			'uploader_id',
-			'uploader',
-			12,
-			false,
-			12,
-			13,
-			145,
-			true,
-			true,
-			true,
-			true,
-			'description',
-			[('call', 'content', 'subtitle', 'title', 'url')],
-			[('text', 'url')],
-			'uploader_badges',
-			'video_badges'
-		)`
-	*/
+		var richMetadataSlice [][]interface{}
+		richMetadataSlice = append(richMetadataSlice, richMetadata)
+		var superTitlesSlice [][]interface{}
+		superTitlesSlice = append(superTitlesSlice, superTitles)
 
-	err := db.Conn.Exec(ctx, `
-	INSERT INTO youtube.youtube_stats
-	SETTINGS input_format_null_as_default = 1
-	SELECT
-    	id,
-    	parseDateTimeBestEffortUSOrZero(toString(fetch_date)) AS fetch_date,
-    	upload_date AS upload_date_str,
-    	toDate(parseDateTimeBestEffortUSOrZero(upload_date::String)) AS upload_date,
-    	ifNull(title, '') AS title,
-    	uploader_id,
-    	ifNull(uploader, '') AS uploader,
-    	uploader_sub_count,
-    	is_age_limit,
-    	view_count,
-    	like_count,
-    	dislike_count,
-    	is_crawlable,
-    	has_subtitles,
-    	is_ads_enabled,
-    	is_comments_enabled,
-    	ifNull(description, '') AS description,
-    	rich_metadata,
-    	super_titles,
-    	ifNull(uploader_badges, '') AS uploader_badges,
-    	ifNull(video_badges, '') AS video_badges
-	FROM s3(
-    	'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
-    	'JSONLines'
-	)
-	`)
-
-	return err
+		entry := &writer.ConnEntry{
+			Id:                  e.Id,
+			Fetch_date:          e.Fetch_date,
+			Upload_date_str:     e.Upload_date_str,
+			Upload_date:         e.Upload_date,
+			Title:               e.Title,
+			Uploader_id:         e.Uploader_id,
+			Uploader:            e.Uploader,
+			Uploader_sub_count:  uploaderSubCount,
+			Is_age_limit:        e.Is_age_limit,
+			View_count:          viewCount,
+			Like_count:          likeCount,
+			Dislike_count:       dislikeCount,
+			Is_crawlable:        e.Is_crawlable,
+			Has_subtitles:       e.Has_subtitles,
+			Is_ads_enabled:      e.Is_ads_enabled,
+			Is_comments_enabled: e.Is_comments_enabled,
+			Description:         e.Description,
+			Rich_metadata:       richMetadataSlice,
+			Super_titles:        superTitlesSlice,
+			Uploader_badges:     e.Uploader_badges,
+			Video_badges:        e.Video_badges,
+		}
+		close(entryChannel)
+		writeChannel <- *entry
+	}
 }
 
 func printOutLists(data driver.Rows) {
@@ -236,9 +242,9 @@ func (db *DB) createTables() error {
 	err := db.Conn.Exec(ctx, `
 	CREATE TABLE youtube.youtube_stats (
 		id String,
-		fetch_date DateTime,
+		fetch_date String,
 		upload_date_str String,
-		upload_date Date,
+		upload_date String,
 		title String,
 		uploader_id String,
 		uploader String,
