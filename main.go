@@ -2,9 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"learning-clickhouse/writer"
 	"log"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	jsoniter "github.com/json-iterator/go"
 )
 
 type (
@@ -27,19 +26,6 @@ type (
 		ctx             context.Context
 		cancel          context.CancelFunc
 		ImportStartedAt int64
-	}
-
-	RichMetadata struct {
-		call     string
-		content  string
-		subtitle string
-		title    string
-		url      string
-	}
-
-	SuperTitles struct {
-		text string
-		url  string
 	}
 )
 
@@ -103,24 +89,22 @@ func scanFile(entryChannel chan<- writer.YT) {
 
 	for scanner.Scan() {
 		var data writer.YT
+		if len(scanner.Bytes()) < 1 {
+			continue
+		}
 		if scanner.Err() != nil {
 			log.Fatal("failed to scan")
 			return
 		}
 
-		println(scanner.Text())
-
-		dst := &bytes.Buffer{}
-		if err := json.Compact(dst, scanner.Bytes()); err != nil {
-			panic(err)
-		}
-
-		if err := json.Unmarshal(dst.Bytes(), &data); err != nil {
+		if err := jsoniter.ConfigCompatibleWithStandardLibrary.Unmarshal(scanner.Bytes(), &data); err != nil {
 			logger.Err(err).Bytes("record", scanner.Bytes()).Msg("failed to unmarshal line from JSON")
 			continue
 		}
+
 		entryChannel <- data
 	}
+	close(entryChannel)
 }
 
 func parseConn(entryChannel chan writer.YT, writeChannel chan<- writer.ConnEntry) {
@@ -141,27 +125,6 @@ func parseConn(entryChannel chan writer.YT, writeChannel chan<- writer.ConnEntry
 		if err != nil {
 			panic(err)
 		}
-		richMetadata := make([]interface{}, 5)
-		for i := 0; i < 5; i++ {
-			if i < len(e.Rich_metadata) {
-				richMetadata[i] = e.Rich_metadata[i]
-			} else {
-				richMetadata[i] = ""
-			}
-		}
-		superTitles := make([]interface{}, 2)
-		for i := 0; i < 2; i++ {
-			if i < len(e.Super_titles) {
-				superTitles[i] = e.Super_titles[i]
-			} else {
-				superTitles[i] = ""
-			}
-		}
-
-		var richMetadataSlice [][]interface{}
-		richMetadataSlice = append(richMetadataSlice, richMetadata)
-		var superTitlesSlice [][]interface{}
-		superTitlesSlice = append(superTitlesSlice, superTitles)
 
 		entry := &writer.ConnEntry{
 			Id:                  e.Id,
@@ -181,14 +144,14 @@ func parseConn(entryChannel chan writer.YT, writeChannel chan<- writer.ConnEntry
 			Is_ads_enabled:      e.Is_ads_enabled,
 			Is_comments_enabled: e.Is_comments_enabled,
 			Description:         e.Description,
-			Rich_metadata:       richMetadataSlice,
-			Super_titles:        superTitlesSlice,
+			Rich_metadata:       e.Rich_metadata,
+			Super_titles:        e.Super_titles,
 			Uploader_badges:     e.Uploader_badges,
 			Video_badges:        e.Video_badges,
 		}
-		close(entryChannel)
 		writeChannel <- *entry
 	}
+	close(writeChannel)
 }
 
 func printOutLists(data driver.Rows) {
