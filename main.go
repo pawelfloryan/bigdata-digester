@@ -59,22 +59,34 @@ func main() {
 
 	db.createTables()
 
-	jsonWriter := writer.NewWriter(db, "youtube")
-	entryChannel := make(chan writer.YT)
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		jsonWriter.WriteBatch(db.Conn)
-	}()
-	go func() {
-		defer wg.Done()
-		scanFile(entryChannel)
-	}()
-	go func() {
-		defer wg.Done()
-		parseConn(entryChannel, jsonWriter.WriteChannel)
-	}()
-	wg.Wait()
+	var count uint64
+	db.Conn.QueryRow(ctx, "SELECT count() FROM youtube.youtube_stats").Scan(&count)
+
+	if count == 0 {
+		jsonWriter := writer.NewWriter(db, "youtube")
+		entryChannel := make(chan writer.YT)
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			jsonWriter.WriteBatch(db.Conn)
+		}()
+		go func() {
+			defer wg.Done()
+			scanFile(entryChannel)
+		}()
+		go func() {
+			defer wg.Done()
+			parseConn(entryChannel, jsonWriter.WriteChannel)
+		}()
+		wg.Wait()
+	}
+
+	//good, bad, err := db.selectData()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//printOutLists(good)
+	//printOutLists(bad)
 }
 
 func scanFile(entryChannel chan<- writer.YT) {
