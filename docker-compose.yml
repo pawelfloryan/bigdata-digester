@@ -1,0 +1,10 @@
+version: '1.25.0'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: digester-clickhouse-db
+    volumes:
+      - /var/lib/clickhouse:/home
+    restart: unless-stopped
+    
