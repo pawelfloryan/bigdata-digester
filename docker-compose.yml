@@ -1,6 +1,12 @@
 version: '1.25.0'
 
 services:
+  digester:
+    build: .
+    container_name: bigdata-digester
+    depends_on:
+      - clickhouse
+
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: digester-clickhouse-db
