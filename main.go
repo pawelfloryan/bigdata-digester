@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"learning-clickhouse/writer"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	zerolog "learning-clickhouse/logger"
 
@@ -19,13 +21,9 @@ import (
 
 type (
 	DB struct {
-		Conn            driver.Conn
-		selected        string
-		rolling         bool
-		rebuild         bool
-		ctx             context.Context
-		cancel          context.CancelFunc
-		ImportStartedAt int64
+		Conn     driver.Conn
+		selected string
+		ctx      context.Context
 	}
 )
 
@@ -46,12 +44,15 @@ func (db *DB) QueryParameters(params clickhouse.Parameters) context.Context {
 
 func main() {
 	var wg sync.WaitGroup
-	db, err := connect()
+	ctx := context.Background()
+	db, err := connect(ctx)
+
 	if err != nil {
 		println("Couldn't connect to the database")
+		panic(err)
 	}
 
-	ctx := clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
+	ctx = clickhouse.Context(context.Background(), clickhouse.WithParameters(clickhouse.Parameters{
 		"database": db.selected,
 	}))
 
@@ -80,13 +81,6 @@ func main() {
 		}()
 		wg.Wait()
 	}
-
-	//good, bad, err := db.selectData()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//printOutLists(good)
-	//printOutLists(bad)
 }
 
 func scanFile(entryChannel chan<- writer.YT) {
@@ -284,20 +278,30 @@ func (db *DB) createTables() error {
 	return err
 }
 
-func connect() (*DB, error) {
+func connect(ctx context.Context) (*DB, error) {
+	time.Sleep(1000)
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{"localhost:19000"},
+		Addr: []string{"localhost:9000"},
 		Auth: clickhouse.Auth{
 			Database: "default",
 			Username: "default",
 			Password: "",
 		},
+		DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", addr)
+		},
+		Debug: true,
 		Debugf: func(format string, v ...interface{}) {
 			fmt.Printf(format, v)
 		},
 	})
 
 	if err != nil {
+		return nil, err
+	}
+
+	if err := conn.Ping(ctx); err != nil {
 		return nil, err
 	}
 

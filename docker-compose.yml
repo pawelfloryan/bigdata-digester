@@ -5,10 +5,19 @@ services:
     container_name: bigdata-digester
     depends_on:
       - clickhouse
+    ports:
+      - 8088:80
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
-    container_name: digester-clickhouse-db
+    container_name: clickhouse
+    ports:
+      - 9000:9000
     volumes:
       - /var/lib/clickhouse:/home
     restart: unless-stopped
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 131070
+        hard: 131070
